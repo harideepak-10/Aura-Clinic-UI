@@ -339,3 +339,276 @@ export interface ChatResponse {
   options: unknown
   context: { name: string; today: string }
 }
+
+// ─── Staff scheduling (working hours / breaks / leave) ───────────────────────
+
+export type WeekDay = 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat' | 'Sun'
+
+export interface WorkingHoursDay {
+  id?: number
+  day: WeekDay
+  day_off: boolean
+  start_time?: string | null
+  end_time?: string | null
+}
+
+export interface StaffBreak {
+  id: number
+  start_time: string
+  end_time: string
+  label: string
+}
+
+export interface StaffLeave {
+  id: number
+  from_date: string
+  to_date: string
+  reason: string
+}
+
+export interface StaffRegisterInput {
+  username: string
+  email: string
+  password: string
+  confirm_password: string
+  role_id: number // 2 = reception, 3 = therapist
+}
+
+export interface StaffUpdateInput {
+  username?: string
+  email?: string
+  role_id?: number
+  phone?: string
+  specialist_area?: string
+  joining_date?: string
+  years_of_experience?: number
+}
+
+// ─── Treatments / Rooms write payloads ───────────────────────────────────────
+
+export interface TreatmentInput {
+  name: string
+  category_id: number
+  description?: string
+  duration: number
+  price_plans?: { sessions: number; price: number }[]
+  pre_care_instructions?: string
+  post_care_instructions?: string
+  contraindications?: string[]
+  room_ids?: number[]
+  staff_ids?: number[]
+}
+
+export interface RoomInput {
+  name: string
+  room_type_id: number
+  description?: string
+}
+
+// ─── Leads ────────────────────────────────────────────────────────────────────
+
+export type LeadStage = 'new_inquiries' | 'engaged' | 'consultation' | 'winning' | 'converted' | 'lost'
+export type LeadSource = 'instagram' | 'web' | 'walk_in' | 'referral' | 'whatsapp' | 'other'
+
+export interface Lead {
+  id: number
+  name: string
+  phone: string
+  email: string | null
+  source: LeadSource
+  marketing_source_id: number
+  stage: LeadStage
+  stage_id: number
+  interest: string
+  service_id: number | null
+  service_detail: { id: number; name: string } | null
+  notes: string
+  value: string
+  assigned_to: number | null
+  assigned_to_name: string | null
+  last_contacted: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface LeadPipelineColumn {
+  stage: LeadStage
+  stage_label: string
+  count: number
+  leads: Lead[]
+}
+
+export interface LeadStats {
+  new_inquiries: number
+  engaged: number
+  consultation: number
+  winning: number
+  lost: number
+  total_leads: number
+  active: number
+  valuation: number
+}
+
+export interface LeadMetaOption {
+  id: number
+  value: string
+  label: string
+}
+
+export interface LeadMeta {
+  marketing_sources: LeadMetaOption[]
+  stages: LeadMetaOption[]
+}
+
+export interface LeadInput {
+  name: string
+  phone: string
+  email?: string
+  marketing_source_id: number
+  stage_id?: number
+  interest?: string
+  notes?: string
+  value?: number
+  assigned_to?: number
+}
+
+// ─── Clinic hours / planned closures ──────────────────────────────────────────
+
+export interface ClinicHoursDay {
+  id: number | null
+  day: WeekDay
+  is_open: boolean
+  open_time: string | null
+  close_time: string | null
+}
+
+export interface PlannedClosure {
+  id: number
+  from_date: string
+  to_date: string
+  reason: string
+  created_at: string
+}
+
+// ─── Patient sub-sections (Overview / History / Notes / Photos / Consent) ────
+
+export interface PatientUpcomingAppointment {
+  id: number
+  date: string
+  time: string
+  treatment: string | null
+  therapist: string | null
+  duration: number
+  status: AppointmentStatus
+  session_number: number
+  total_sessions: number
+}
+
+export interface PatientActivePackage {
+  plan_id: number
+  package_name: string
+  therapist: string | null
+  sessions_used: number
+  total_sessions: number
+  next_date: string | null
+}
+
+export interface PatientActivityEntry {
+  type: 'treatment' | 'note' | 'consent' | 'payment'
+  date: string
+  title: string
+  subtitle: string
+  status?: AppointmentStatus
+}
+
+export interface PatientOverview {
+  patient_id: string
+  name: string
+  category: string
+  allergy_warning: string | null
+  upcoming_appointment: PatientUpcomingAppointment | null
+  active_packages: PatientActivePackage[]
+  patient_activity: PatientActivityEntry[]
+}
+
+export interface PatientHistoryEntry {
+  id: number
+  date: string
+  treatment: string | null
+  therapist: string | null
+  duration: number
+  price: string
+  package: string | null
+  session_number: number
+  total_sessions: number
+  rating: number | null
+  next_date: string | null
+  status: AppointmentStatus
+  cancellation_reason: string | null
+}
+
+export interface PatientHistory {
+  stats: { total: number; completed: number; cancelled: number; scheduled: number }
+  timeline: PatientHistoryEntry[]
+}
+
+export interface PatientNote {
+  id: number
+  treatment_name: string
+  therapist: string | null
+  date: string
+  skin_observation: string
+  session_notes: string
+  products_used: string
+  recommended_to_patient: string | null
+  next_treatment: string | null
+  before_photo: string | null
+  after_photo: string | null
+  appointment_status: AppointmentStatus | null
+}
+
+export interface PatientNotesResponse {
+  stats: { total_notes: number; completed: number; with_photos: number }
+  notes: PatientNote[]
+}
+
+export interface PatientNoteInput {
+  appointment_id?: number
+  treatment_name?: string
+  skin_observation?: string
+  session_notes?: string
+  products_used?: string
+  recommended_to_patient?: string
+  next_treatment?: string
+}
+
+export interface PatientPhotoEntry {
+  session_id: number
+  treatment_name: string
+  therapist: string | null
+  date: string
+  before_photo: string | null
+  after_photo: string | null
+}
+
+export interface PatientPhotosResponse {
+  photos: PatientPhotoEntry[]
+  total: number
+}
+
+export interface ConsentRecord {
+  id: number
+  title: string
+  file_name: string | null
+  file_url: string | null
+  status: 'pending' | 'signed'
+  patient_signed: boolean
+  therapist_signed: boolean
+  signed_date: string | null
+  created_at: string
+}
+
+export interface ConsentResponse {
+  stats: { signed: number; pending: number }
+  records: ConsentRecord[]
+}

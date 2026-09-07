@@ -7,8 +7,14 @@ const titles: Record<string, { title: string; subtitle: string }> = {
   '/': { title: 'Good morning', subtitle: "Here's how the clinic looks today" },
   '/appointments': { title: 'Appointments', subtitle: 'Bookings across all therapists and rooms' },
   '/patients': { title: 'Patients', subtitle: 'Manage patient records and history' },
+  '/leads': { title: 'Leads', subtitle: 'Track enquiries through your pipeline' },
+  '/staff': { title: 'Staff', subtitle: 'Therapists, receptionists, and their schedules' },
+  '/treatments': { title: 'Treatments', subtitle: 'Services, pricing plans, and room assignments' },
+  '/rooms': { title: 'Rooms', subtitle: 'Treatment rooms available for booking' },
   '/inventory': { title: 'Inventory', subtitle: 'Stock levels across skincare, injectables, and spa' },
   '/billing': { title: 'Billing', subtitle: 'Invoices and Stripe payment activity' },
+  '/clinic-hours': { title: 'Clinic hours', subtitle: 'Weekly schedule and planned closures' },
+  '/settings': { title: 'Settings', subtitle: 'Your account and clinic configuration' },
   '/assistant': { title: 'AI Assistant', subtitle: 'Ask Aura about your clinic in plain language' },
 }
 

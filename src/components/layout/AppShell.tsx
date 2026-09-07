@@ -1,16 +1,20 @@
 import { Outlet, useLocation, NavLink } from 'react-router-dom'
-import { LayoutDashboard, CalendarDays, Users, Package, Receipt, Sparkles } from 'lucide-react'
+import { LayoutDashboard, CalendarDays, Users, Receipt, Sparkles, Settings as SettingsIcon } from 'lucide-react'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 import { cn } from '../../lib/cn'
 
+// Back-office sections (Staff, Treatments, Rooms, Leads, Clinic hours) live in
+// the desktop sidebar only — on mobile the "More" tab opens Settings, which
+// links out to every one of them, mirroring the Flutter reference app's
+// pattern of using its Settings screen as the hub for secondary screens.
 const mobileNavItems = [
   { to: '/', label: 'Home', icon: LayoutDashboard, end: true },
   { to: '/appointments', label: 'Bookings', icon: CalendarDays },
   { to: '/patients', label: 'Patients', icon: Users },
-  { to: '/inventory', label: 'Stock', icon: Package },
   { to: '/billing', label: 'Billing', icon: Receipt },
   { to: '/assistant', label: 'Aura', icon: Sparkles },
+  { to: '/settings', label: 'More', icon: SettingsIcon },
 ]
 
 export function AppShell() {

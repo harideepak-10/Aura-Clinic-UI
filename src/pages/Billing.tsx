@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Search, CreditCard, RotateCcw } from 'lucide-react'
+import { Search, CreditCard, RotateCcw, AlertTriangle } from 'lucide-react'
 import { Card, CardBody, CardHeader, CardTitle } from '../components/ui/Card'
 import { Input } from '../components/ui/Input'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
+import { Modal } from '../components/ui/Modal'
 import { StatTile } from '../components/ui/StatTile'
-import { getInvoices } from '../lib/dataSource'
+import { getInvoiceDetail, getInvoices, markAppointmentPaid, refundAppointment } from '../lib/dataSource'
 import { apiErrorMessage } from '../lib/api'
-import type { PaymentsResponse, PaymentStatus } from '../lib/types'
+import type { PaymentListItem, PaymentsResponse, PaymentStatus } from '../lib/types'
 import { formatDate, paymentTone } from '../lib/format'
 
 const statusFilters: (PaymentStatus | 'all')[] = ['all', 'paid', 'pending', 'refunded']
@@ -18,6 +19,7 @@ export function Billing() {
   const [status, setStatus] = useState<PaymentStatus | 'all'>('all')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [selected, setSelected] = useState<PaymentListItem | null>(null)
 
   const load = (s?: PaymentStatus | 'all') => {
     setLoading(true)
@@ -97,7 +99,11 @@ export function Billing() {
                   </tr>
                 ) : (
                   filtered.map((inv) => (
-                    <tr key={inv.appointment_id} className="transition-colors hover:bg-[var(--color-ivory-dim)]">
+                    <tr
+                      key={inv.appointment_id}
+                      onClick={() => setSelected(inv)}
+                      className="cursor-pointer transition-colors hover:bg-[var(--color-ivory-dim)]"
+                    >
                       <td className="py-3.5 pr-4 font-medium text-[var(--color-ink)]">{inv.patient_name}</td>
                       <td className="py-3.5 pr-4 text-[var(--color-ink-soft)]">{inv.treatment_name}</td>
                       <td className="py-3.5 pr-4 text-[var(--color-ink-faint)]">{formatDate(inv.date)}</td>
@@ -121,6 +127,108 @@ export function Billing() {
           </div>
         </CardBody>
       </Card>
+
+      <InvoiceModal invoice={selected} onClose={() => setSelected(null)} onChanged={() => load(status)} />
     </div>
+  )
+}
+
+function InvoiceModal({ invoice, onClose, onChanged }: { invoice: PaymentListItem | null; onClose: () => void; onChanged: () => void }) {
+  const [detail, setDetail] = useState<Record<string, unknown> | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!invoice) return
+    setDetail(null)
+    setError(null)
+    getInvoiceDetail(invoice.appointment_id)
+      .then(setDetail)
+      .catch((err) => setError(apiErrorMessage(err, 'Could not load this invoice.')))
+  }, [invoice])
+
+  if (!invoice) return null
+
+  const markPaid = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      await markAppointmentPaid(invoice.appointment_id)
+      onChanged()
+      onClose()
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Could not mark this invoice as paid.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const refund = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      await refundAppointment(invoice.appointment_id)
+      onChanged()
+      onClose()
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Could not refund this invoice.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal open={!!invoice} onClose={onClose} title={invoice.patient_name} width="max-w-lg">
+      <div className="space-y-4">
+        <div className="flex items-center justify-between rounded-[var(--radius-md)] border border-[var(--color-line-soft)] px-4 py-3">
+          <div>
+            <p className="font-medium text-[var(--color-ink)]">{invoice.treatment_name}</p>
+            <p className="text-xs text-[var(--color-ink-faint)]">
+              {formatDate(invoice.date)} · {invoice.payment_type.toUpperCase()}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="font-medium text-[var(--color-ink)]">{invoice.amount}</p>
+            <Badge tone={paymentTone(invoice.payment_status)}>{invoice.payment_status}</Badge>
+          </div>
+        </div>
+
+        {detail && (
+          <div className="space-y-1.5 text-sm text-[var(--color-ink-soft)]">
+            {Object.entries(detail)
+              .filter(([key]) => !['patient_name', 'treatment_name', 'date', 'amount', 'payment_status', 'payment_type', 'appointment_id'].includes(key))
+              .map(([key, value]) => (
+                <div key={key} className="flex items-center justify-between">
+                  <span className="capitalize text-[var(--color-ink-faint)]">{key.replace(/_/g, ' ')}</span>
+                  <span>{typeof value === 'object' ? JSON.stringify(value) : String(value ?? '—')}</span>
+                </div>
+              ))}
+          </div>
+        )}
+
+        {error && (
+          <div className="flex items-start gap-2.5 rounded-[var(--radius-md)] bg-[var(--color-danger-soft)] px-3.5 py-3 text-sm text-[var(--color-danger)]">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 border-t border-[var(--color-line-soft)] pt-4">
+          <Button variant="secondary" onClick={onClose}>
+            Close
+          </Button>
+          {invoice.payment_status === 'pending' && (
+            <Button onClick={markPaid} disabled={busy}>
+              {busy ? 'Working…' : 'Mark as paid'}
+            </Button>
+          )}
+          {invoice.payment_status === 'paid' && (
+            <Button variant="danger" onClick={refund} disabled={busy}>
+              {busy ? 'Working…' : 'Refund'}
+            </Button>
+          )}
+        </div>
+      </div>
+    </Modal>
   )
 }
