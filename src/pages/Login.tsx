@@ -8,7 +8,7 @@ import { useAuth } from '../lib/auth'
 
 export function Login() {
   const { login, isLoading, error, isAuthenticated } = useAuth()
-  const [email, setEmail] = useState('deepak@krypsos.tech')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
 
   if (isAuthenticated) return <Navigate to="/" replace />
@@ -115,7 +115,7 @@ export function Login() {
           </form>
 
           <p className="mt-8 text-center text-xs text-[var(--color-ink-faint)]">
-            Preview mode — any email &amp; password signs you in with sample clinic data.
+            Connects to your live Aura backend — sign in with your clinic account.
           </p>
         </motion.div>
       </div>

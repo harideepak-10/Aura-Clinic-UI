@@ -2,26 +2,28 @@ import { type FormEvent, useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Sparkles, Send, Loader2 } from 'lucide-react'
 import { Card } from '../components/ui/Card'
-import { getChatMessages, sendChatMessage } from '../lib/dataSource'
-import type { ChatMessage } from '../lib/types'
+import { sendChatMessage } from '../lib/dataSource'
+import { apiErrorMessage } from '../lib/api'
+import { useAuth } from '../lib/auth'
+import type { ChatTurn } from '../lib/types'
 import { cn } from '../lib/cn'
 
 const suggestions = [
   "What's on the schedule this afternoon?",
   'Which items are low on stock?',
-  'Show me overdue invoices',
-  "Summarize Carmen Ortiz's visit history",
+  'Show me pending invoices',
+  "Summarize a patient's visit history",
 ]
 
 export function Assistant() {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const user = useAuth((s) => s.user)
+  const [messages, setMessages] = useState<ChatTurn[]>([
+    { role: 'assistant', content: `Hola${user?.username ? `, ${user.username}` : ''}! I'm Aura, your clinic assistant. Ask me about today's schedule, patient history, or inventory levels.` },
+  ])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    getChatMessages().then(setMessages)
-  }, [])
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -31,18 +33,17 @@ export function Assistant() {
     e?.preventDefault()
     const content = forced ?? input
     if (!content.trim()) return
-    const userMsg: ChatMessage = {
-      id: `local-${Date.now()}`,
-      role: 'user',
-      content,
-      createdAt: new Date().toISOString(),
-    }
+    const history = messages
+    const userMsg: ChatTurn = { role: 'user', content }
     setMessages((prev) => [...prev, userMsg])
     setInput('')
     setSending(true)
+    setError(null)
     try {
-      const reply = await sendChatMessage(content)
-      setMessages((prev) => [...prev, reply])
+      const res = await sendChatMessage(content, history)
+      setMessages((prev) => [...prev, { role: 'assistant', content: res.reply }])
+    } catch (err) {
+      setError(apiErrorMessage(err, "Aura couldn't respond just now."))
     } finally {
       setSending(false)
     }
@@ -62,19 +63,17 @@ export function Assistant() {
         </div>
 
         <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-6 py-6">
-          {messages.map((m) => (
+          {messages.map((m, i) => (
             <motion.div
-              key={m.id}
+              key={i}
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               className={cn('flex', m.role === 'user' ? 'justify-end' : 'justify-start')}
             >
               <div
                 className={cn(
-                  'max-w-[80%] rounded-[var(--radius-lg)] px-4 py-2.5 text-sm leading-relaxed',
-                  m.role === 'user'
-                    ? 'bg-[var(--color-forest-800)] text-[var(--color-ivory)]'
-                    : 'bg-[var(--color-ivory-dim)] text-[var(--color-ink)]',
+                  'max-w-[80%] whitespace-pre-wrap rounded-[var(--radius-lg)] px-4 py-2.5 text-sm leading-relaxed',
+                  m.role === 'user' ? 'bg-[var(--color-forest-800)] text-[var(--color-ivory)]' : 'bg-[var(--color-ivory-dim)] text-[var(--color-ink)]',
                 )}
               >
                 {m.content}
@@ -88,9 +87,10 @@ export function Assistant() {
               </div>
             </div>
           )}
+          {error && <p className="text-center text-sm text-[var(--color-danger)]">{error}</p>}
         </div>
 
-        {messages.length <= 2 && (
+        {messages.length <= 1 && (
           <div className="flex flex-wrap gap-2 px-6 pb-3">
             {suggestions.map((s) => (
               <button

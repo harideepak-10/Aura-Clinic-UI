@@ -1,10 +1,9 @@
 import { create } from 'zustand'
-import { api, tokenStore, USE_MOCKS } from './api'
-import { mockUser } from './mockData'
-import type { User } from './types'
+import { api, apiErrorMessage, tokenStore } from './api'
+import type { AuthUser } from './types'
 
 interface AuthState {
-  user: User | null
+  user: AuthUser | null
   isAuthenticated: boolean
   isLoading: boolean
   error: string | null
@@ -15,24 +14,25 @@ interface AuthState {
 
 // Computed once at module load (before the first render) so a direct
 // navigation or refresh on any route doesn't briefly render as
-// "logged out" and bounce through /login — that race is what causes a
-// hard refresh on, say, /appointments to land back on the dashboard.
+// "logged out" and bounce through /login before hydrate() confirms the
+// token — that race is what causes a hard refresh on, say,
+// /appointments to land back on the dashboard.
 const initialToken = tokenStore.getAccess()
 
 export const useAuth = create<AuthState>((set) => ({
-  user: initialToken && USE_MOCKS ? mockUser : null,
+  user: null,
   isAuthenticated: !!initialToken,
   isLoading: false,
   error: null,
 
-  // Confirms/refreshes the real user object once the API is reachable.
-  // In mock mode there's nothing more to fetch. On a real backend, an
-  // invalid/expired token logs the user back out.
+  // Confirms the token against /users/me/ once the app mounts. An
+  // invalid/expired token (backend restarted, blacklisted, etc.) logs
+  // the user back out instead of leaving a broken "authenticated" shell.
   hydrate: async () => {
-    if (!initialToken || USE_MOCKS) return
+    if (!initialToken) return
     try {
-      const me = await api.get('/users/me/')
-      set({ user: me.data, isAuthenticated: true })
+      const { data } = await api.get('/users/me/')
+      set({ user: data, isAuthenticated: true })
     } catch {
       tokenStore.clear()
       set({ user: null, isAuthenticated: false })
@@ -42,23 +42,21 @@ export const useAuth = create<AuthState>((set) => ({
   login: async (email: string, password: string) => {
     set({ isLoading: true, error: null })
     try {
-      if (USE_MOCKS) {
-        await new Promise((r) => setTimeout(r, 500))
-        tokenStore.set('mock-access-token', 'mock-refresh-token')
-        set({ user: mockUser, isAuthenticated: true, isLoading: false })
-        return
-      }
-      const { data } = await api.post('/token/', { email, password })
-      tokenStore.set(data.access, data.refresh)
-      const me = await api.get('/users/me/')
-      set({ user: me.data, isAuthenticated: true, isLoading: false })
-    } catch {
-      set({ error: 'Invalid email or password. Please try again.', isLoading: false })
+      const { data } = await api.post('/users/login/', { email, password })
+      tokenStore.set(data.token, data.refresh_token)
+      set({ user: data.user, isAuthenticated: true, isLoading: false })
+    } catch (err) {
+      set({ error: apiErrorMessage(err, 'Invalid email or password.'), isLoading: false })
     }
   },
 
   logout: () => {
+    const refreshToken = tokenStore.getRefresh()
     tokenStore.clear()
     set({ user: null, isAuthenticated: false })
+    if (refreshToken) {
+      // Best-effort blacklist — fine if it fails, the tokens are already gone client-side.
+      api.post('/users/logout/', { refresh_token: refreshToken }).catch(() => {})
+    }
   },
 }))

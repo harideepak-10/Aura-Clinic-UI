@@ -33,9 +33,9 @@ export function Topbar({ path }: { path: string }) {
         </button>
         <div className="mx-1 h-8 w-px bg-[var(--color-line)]" />
         <div className="flex items-center gap-2.5">
-          <Avatar name={user?.name ?? 'Aura Admin'} size={36} />
+          <Avatar name={user?.username ?? 'Aura Admin'} size={36} />
           <div className="hidden text-sm md:block">
-            <p className="font-medium leading-none text-[var(--color-ink)]">{user?.name}</p>
+            <p className="font-medium leading-none text-[var(--color-ink)]">{user?.username}</p>
             <p className="text-xs text-[var(--color-ink-faint)] capitalize">{user?.role?.replace('_', ' ')}</p>
           </div>
         </div>

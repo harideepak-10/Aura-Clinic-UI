@@ -1,66 +1,81 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, Plus, AlertTriangle, MapPin } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, AlertTriangle, MapPin, RotateCcw } from 'lucide-react'
 import { Card, CardBody, CardHeader, CardTitle } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
 import { Modal } from '../components/ui/Modal'
 import { Input, Label } from '../components/ui/Input'
 import { Avatar } from '../components/ui/Avatar'
-import { getAppointments, getPatients, getRooms, getTherapists } from '../lib/dataSource'
-import type { Appointment, Patient, Room, Therapist } from '../lib/types'
-import { formatTime, statusTone } from '../lib/format'
+import { apiErrorMessage } from '../lib/api'
+import { createAppointment, getAppointments, getPatients, getRooms, getTherapists, getTreatments } from '../lib/dataSource'
+import type { Appointment, Patient, Room, StaffMember, Treatment } from '../lib/types'
+import { statusTone, statusLabel } from '../lib/format'
 
 const DAY_START = 8
 const DAY_END = 20
+const THERAPIST_COLORS = ['var(--color-forest-600)', 'var(--color-gold-600)', 'var(--color-info)', 'var(--color-danger)', 'var(--color-forest-800)']
 
-function isSameDay(iso: string, date: string) {
-  return iso.slice(0, 10) === date
+function todayIso() {
+  return new Date().toISOString().slice(0, 10)
 }
 
-function overlaps(aStart: string, aEnd: string, bStart: string, bEnd: string) {
-  return new Date(aStart) < new Date(bEnd) && new Date(bStart) < new Date(aEnd)
+function parseTimeRange(time: string): { start: number; end: number } | null {
+  const [startStr, endStr] = time.split('-').map((s) => s.trim())
+  const toHour = (s: string) => {
+    const [h, m] = s.split(':').map(Number)
+    return h + (m || 0) / 60
+  }
+  if (!startStr) return null
+  return { start: toHour(startStr), end: endStr ? toHour(endStr) : toHour(startStr) + 1 }
 }
 
 export function Appointments() {
-  const [appointments, setAppointments] = useState<Appointment[]>([])
-  const [therapists, setTherapists] = useState<Therapist[]>([])
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [therapists, setTherapists] = useState<StaffMember[]>([])
   const [rooms, setRooms] = useState<Room[]>([])
+  const [treatments, setTreatments] = useState<Treatment[]>([])
   const [patients, setPatients] = useState<Patient[]>([])
-  const [selectedDate, setSelectedDate] = useState('2026-09-07')
+  const [selectedDate, setSelectedDate] = useState(todayIso())
   const [modalOpen, setModalOpen] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [roomsBlocked, setRoomsBlocked] = useState(false)
 
   const [form, setForm] = useState({
     patientId: '',
+    treatmentId: '',
+    pricePlanId: '',
     therapistId: '',
     roomId: '',
-    service: '',
     time: '09:00',
-    durationMin: 60,
   })
 
+  const selectedTreatment = treatments.find((t) => String(t.id) === form.treatmentId)
+
+  const loadDay = (date: string) => {
+    setLoading(true)
+    setLoadError(null)
+    getAppointments({ date })
+      .then(setAppointments)
+      .catch((err) => setLoadError(apiErrorMessage(err, 'Could not load appointments.')))
+      .finally(() => setLoading(false))
+  }
+
   useEffect(() => {
-    getAppointments().then(setAppointments)
-    getTherapists().then(setTherapists)
-    getRooms().then(setRooms)
-    getPatients().then(setPatients)
+    loadDay(selectedDate)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate])
+
+  useEffect(() => {
+    getTherapists().then(setTherapists).catch(() => {})
+    getTreatments().then(setTreatments).catch(() => {})
+    getPatients().then(setPatients).catch(() => {})
+    getRooms()
+      .then(setRooms)
+      .catch(() => setRoomsBlocked(true)) // rooms/ is admin-only on the backend
   }, [])
-
-  const dayAppointments = useMemo(
-    () => appointments.filter((a) => isSameDay(a.start, selectedDate)),
-    [appointments, selectedDate],
-  )
-
-  const conflict = useMemo(() => {
-    if (!form.therapistId || !form.time) return null
-    const start = `${selectedDate}T${form.time}:00`
-    const end = new Date(new Date(start).getTime() + form.durationMin * 60000).toISOString().slice(0, 19)
-    return dayAppointments.find(
-      (a) =>
-        a.status !== 'cancelled' &&
-        (a.therapistId === form.therapistId || a.roomId === form.roomId) &&
-        overlaps(a.start, a.end, start, end),
-    )
-  }, [form, dayAppointments, selectedDate])
 
   const shiftDate = (days: number) => {
     const d = new Date(selectedDate)
@@ -68,27 +83,35 @@ export function Appointments() {
     setSelectedDate(d.toISOString().slice(0, 10))
   }
 
-  const submitBooking = () => {
-    const patient = patients.find((p) => p.id === form.patientId)
-    const start = `${selectedDate}T${form.time}:00`
-    const end = new Date(new Date(start).getTime() + form.durationMin * 60000).toISOString().slice(0, 19)
-    const newAppt: Appointment = {
-      id: `local-${Date.now()}`,
-      patientId: form.patientId,
-      patientName: patient?.name ?? 'Walk-in',
-      therapistId: form.therapistId,
-      roomId: form.roomId,
-      service: form.service || 'Consultation',
-      start,
-      end,
-      status: 'pending',
+  const submitBooking = async () => {
+    if (!form.patientId || !form.therapistId || !form.treatmentId || !form.pricePlanId) return
+    setSubmitting(true)
+    setSubmitError(null)
+    try {
+      await createAppointment({
+        patient_id: form.patientId,
+        staff_id: Number(form.therapistId),
+        treatment_id: Number(form.treatmentId),
+        room_id: form.roomId ? Number(form.roomId) : undefined,
+        price_plan_id: Number(form.pricePlanId),
+        date: selectedDate,
+        time: form.time,
+        duration: selectedTreatment?.duration,
+      })
+      setModalOpen(false)
+      setForm({ patientId: '', treatmentId: '', pricePlanId: '', therapistId: '', roomId: '', time: '09:00' })
+      loadDay(selectedDate)
+    } catch (err) {
+      setSubmitError(apiErrorMessage(err, 'Could not create this booking.'))
+    } finally {
+      setSubmitting(false)
     }
-    setAppointments((prev) => [...prev, newAppt])
-    setModalOpen(false)
-    setForm({ patientId: '', therapistId: '', roomId: '', service: '', time: '09:00', durationMin: 60 })
   }
 
   const totalHours = DAY_END - DAY_START
+  const therapistColor = (id: number) => THERAPIST_COLORS[therapists.findIndex((t) => t.id === id) % THERAPIST_COLORS.length] ?? THERAPIST_COLORS[0]
+
+  const sorted = useMemo(() => [...appointments].sort((a, b) => a.time.localeCompare(b.time)), [appointments])
 
   return (
     <div className="space-y-6">
@@ -109,75 +132,76 @@ export function Appointments() {
         </Button>
       </div>
 
+      {loadError && (
+        <Card className="flex items-center justify-between gap-4 p-5">
+          <p className="text-sm text-[var(--color-danger)]">{loadError}</p>
+          <Button variant="secondary" size="sm" onClick={() => loadDay(selectedDate)}>
+            <RotateCcw size={14} /> Retry
+          </Button>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Room &amp; therapist timeline</CardTitle>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {therapists.map((t) => (
               <span key={t.id} className="flex items-center gap-1.5 text-xs text-[var(--color-ink-faint)]">
-                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: t.color }} />
-                {t.name.split(' ')[0]}
+                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: therapistColor(t.id) }} />
+                {t.username.split(' ')[0]}
               </span>
             ))}
           </div>
         </CardHeader>
         <CardBody>
-          <div className="grid grid-cols-[3rem_repeat(4,1fr)] gap-3">
-            <div className="relative" style={{ height: totalHours * 56 }}>
-              {Array.from({ length: totalHours + 1 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="absolute left-0 -translate-y-2 text-xs text-[var(--color-ink-faint)]"
-                  style={{ top: `${(i / totalHours) * 100}%` }}
-                >
-                  {DAY_START + i}:00
+          {loading ? (
+            <p className="py-16 text-center text-sm text-[var(--color-ink-faint)]">Loading schedule…</p>
+          ) : therapists.length === 0 ? (
+            <p className="py-16 text-center text-sm text-[var(--color-ink-faint)]">No therapists on staff yet.</p>
+          ) : (
+            <div className="grid gap-3" style={{ gridTemplateColumns: `3rem repeat(${therapists.length}, 1fr)` }}>
+              <div className="relative" style={{ height: totalHours * 56 }}>
+                {Array.from({ length: totalHours + 1 }).map((_, i) => (
+                  <div key={i} className="absolute left-0 -translate-y-2 text-xs text-[var(--color-ink-faint)]" style={{ top: `${(i / totalHours) * 100}%` }}>
+                    {DAY_START + i}:00
+                  </div>
+                ))}
+              </div>
+              {therapists.map((therapist) => (
+                <div key={therapist.id} className="relative rounded-[var(--radius-lg)] bg-[var(--color-ivory-dim)]" style={{ height: totalHours * 56 }}>
+                  {Array.from({ length: totalHours }).map((_, i) => (
+                    <div key={i} className="absolute inset-x-0 border-t border-[var(--color-line-soft)]" style={{ top: `${(i / totalHours) * 100}%` }} />
+                  ))}
+                  {appointments
+                    .filter((a) => a.staff_detail.id === therapist.id)
+                    .map((a) => {
+                      const range = parseTimeRange(a.time)
+                      if (!range) return null
+                      const top = ((range.start - DAY_START) / totalHours) * 100
+                      const height = ((range.end - range.start) / totalHours) * 100
+                      const cancelled = a.status === 'cancelled'
+                      return (
+                        <div
+                          key={a.id}
+                          className="absolute inset-x-1 overflow-hidden rounded-[var(--radius-md)] border px-2 py-1.5 text-xs shadow-soft"
+                          style={{
+                            top: `${top}%`,
+                            height: `${Math.max(height, 6)}%`,
+                            backgroundColor: cancelled ? 'var(--color-ivory-dim)' : 'var(--color-surface)',
+                            borderColor: cancelled ? 'var(--color-line)' : therapistColor(therapist.id),
+                            opacity: cancelled ? 0.55 : 1,
+                          }}
+                          title={`${a.patient_detail.name} — ${a.treatment_detail.name}`}
+                        >
+                          <p className={`font-medium text-[var(--color-ink)] ${cancelled ? 'line-through' : ''}`}>{a.patient_detail.name}</p>
+                          <p className="text-[var(--color-ink-faint)]">{a.treatment_detail.name}</p>
+                        </div>
+                      )
+                    })}
                 </div>
               ))}
             </div>
-            {therapists.map((therapist) => (
-              <div
-                key={therapist.id}
-                className="relative rounded-[var(--radius-lg)] bg-[var(--color-ivory-dim)]"
-                style={{ height: totalHours * 56 }}
-              >
-                {Array.from({ length: totalHours }).map((_, i) => (
-                  <div
-                    key={i}
-                    className="absolute inset-x-0 border-t border-[var(--color-line-soft)]"
-                    style={{ top: `${(i / totalHours) * 100}%` }}
-                  />
-                ))}
-                {dayAppointments
-                  .filter((a) => a.therapistId === therapist.id)
-                  .map((a) => {
-                    const startHour = new Date(a.start).getHours() + new Date(a.start).getMinutes() / 60
-                    const endHour = new Date(a.end).getHours() + new Date(a.end).getMinutes() / 60
-                    const top = ((startHour - DAY_START) / totalHours) * 100
-                    const height = ((endHour - startHour) / totalHours) * 100
-                    const cancelled = a.status === 'cancelled'
-                    return (
-                      <div
-                        key={a.id}
-                        className="absolute inset-x-1 overflow-hidden rounded-[var(--radius-md)] border px-2 py-1.5 text-xs shadow-soft"
-                        style={{
-                          top: `${top}%`,
-                          height: `${Math.max(height, 6)}%`,
-                          backgroundColor: cancelled ? 'var(--color-ivory-dim)' : 'var(--color-surface)',
-                          borderColor: cancelled ? 'var(--color-line)' : therapist.color,
-                          opacity: cancelled ? 0.55 : 1,
-                        }}
-                        title={`${a.patientName} — ${a.service}`}
-                      >
-                        <p className={`font-medium text-[var(--color-ink)] ${cancelled ? 'line-through' : ''}`}>
-                          {a.patientName}
-                        </p>
-                        <p className="text-[var(--color-ink-faint)]">{a.service}</p>
-                      </div>
-                    )
-                  })}
-              </div>
-            ))}
-          </div>
+          )}
         </CardBody>
       </Card>
 
@@ -186,37 +210,29 @@ export function Appointments() {
           <CardTitle>List view</CardTitle>
         </CardHeader>
         <CardBody className="space-y-1">
-          {dayAppointments.length === 0 && (
-            <p className="py-6 text-center text-sm text-[var(--color-ink-faint)]">No appointments on this day.</p>
-          )}
-          {dayAppointments
-            .sort((a, b) => a.start.localeCompare(b.start))
-            .map((a) => {
-              const room = rooms.find((r) => r.id === a.roomId)
-              const therapist = therapists.find((t) => t.id === a.therapistId)
-              return (
-                <div
-                  key={a.id}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-lg)] px-3 py-3 transition-colors hover:bg-[var(--color-ivory-dim)]"
-                >
-                  <div className="flex items-center gap-3">
-                    <Avatar name={a.patientName} size={38} />
-                    <div>
-                      <p className="text-sm font-medium text-[var(--color-ink)]">{a.patientName}</p>
-                      <p className="flex items-center gap-1 text-xs text-[var(--color-ink-faint)]">
-                        {a.service} · {therapist?.name} <MapPin size={11} className="ml-1" /> {room?.name}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm text-[var(--color-ink-soft)]">
-                      {formatTime(a.start)}–{formatTime(a.end)}
-                    </span>
-                    <Badge tone={statusTone(a.status)}>{a.status}</Badge>
-                  </div>
+          {!loading && sorted.length === 0 && <p className="py-6 text-center text-sm text-[var(--color-ink-faint)]">No appointments on this day.</p>}
+          {sorted.map((a) => (
+            <div key={a.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-lg)] px-3 py-3 transition-colors hover:bg-[var(--color-ivory-dim)]">
+              <div className="flex items-center gap-3">
+                <Avatar name={a.patient_detail.name} size={38} />
+                <div>
+                  <p className="text-sm font-medium text-[var(--color-ink)]">{a.patient_detail.name}</p>
+                  <p className="flex items-center gap-1 text-xs text-[var(--color-ink-faint)]">
+                    {a.treatment_detail.name} · {a.staff_detail.name}
+                    {a.room_detail && (
+                      <>
+                        <MapPin size={11} className="ml-1" /> {a.room_detail.name}
+                      </>
+                    )}
+                  </p>
                 </div>
-              )
-            })}
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-[var(--color-ink-soft)]">{a.time}</span>
+                <Badge tone={statusTone(a.status)}>{statusLabel(a.status)}</Badge>
+              </div>
+            </div>
+          ))}
         </CardBody>
       </Card>
 
@@ -229,8 +245,8 @@ export function Appointments() {
             <Button variant="secondary" onClick={() => setModalOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={submitBooking} disabled={!form.patientId || !form.therapistId || !form.roomId}>
-              Confirm booking
+            <Button onClick={submitBooking} disabled={submitting || !form.patientId || !form.therapistId || !form.treatmentId || !form.pricePlanId}>
+              {submitting ? 'Booking…' : 'Confirm booking'}
             </Button>
           </>
         }
@@ -253,13 +269,41 @@ export function Appointments() {
           </div>
 
           <div>
-            <Label>Service</Label>
-            <Input
-              value={form.service}
-              onChange={(e) => setForm((f) => ({ ...f, service: e.target.value }))}
-              placeholder="e.g. Signature Facial"
-            />
+            <Label>Treatment</Label>
+            <select
+              className="h-11 w-full rounded-[var(--radius-md)] border border-[var(--color-line)] bg-[var(--color-surface)] px-3.5 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-forest-600)]"
+              value={form.treatmentId}
+              onChange={(e) => setForm((f) => ({ ...f, treatmentId: e.target.value, pricePlanId: '' }))}
+            >
+              <option value="">Select treatment…</option>
+              {treatments.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name} ({t.duration} min)
+                </option>
+              ))}
+            </select>
           </div>
+
+          {selectedTreatment && (
+            <div>
+              <Label>Price plan</Label>
+              <select
+                className="h-11 w-full rounded-[var(--radius-md)] border border-[var(--color-line)] bg-[var(--color-surface)] px-3.5 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-forest-600)]"
+                value={form.pricePlanId}
+                onChange={(e) => setForm((f) => ({ ...f, pricePlanId: e.target.value }))}
+              >
+                <option value="">Select price plan…</option>
+                {selectedTreatment.price_plans.map((pp) => (
+                  <option key={pp.id} value={pp.id}>
+                    {pp.sessions} session{pp.sessions > 1 ? 's' : ''} — €{pp.price}
+                  </option>
+                ))}
+              </select>
+              {selectedTreatment.price_plans.length === 0 && (
+                <p className="mt-1.5 text-xs text-[var(--color-warning)]">This treatment has no price plans set up yet.</p>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -272,19 +316,20 @@ export function Appointments() {
                 <option value="">Select…</option>
                 {therapists.map((t) => (
                   <option key={t.id} value={t.id}>
-                    {t.name}
+                    {t.username}
                   </option>
                 ))}
               </select>
             </div>
             <div>
-              <Label>Room</Label>
+              <Label>Room {roomsBlocked && <span className="normal-case text-[var(--color-ink-faint)]">(admin only)</span>}</Label>
               <select
-                className="h-11 w-full rounded-[var(--radius-md)] border border-[var(--color-line)] bg-[var(--color-surface)] px-3.5 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-forest-600)]"
+                className="h-11 w-full rounded-[var(--radius-md)] border border-[var(--color-line)] bg-[var(--color-surface)] px-3.5 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-forest-600)] disabled:opacity-50"
                 value={form.roomId}
+                disabled={roomsBlocked}
                 onChange={(e) => setForm((f) => ({ ...f, roomId: e.target.value }))}
               >
-                <option value="">Select…</option>
+                <option value="">No room / any</option>
                 {rooms.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.name}
@@ -294,34 +339,19 @@ export function Appointments() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>Start time</Label>
-              <Input
-                type="time"
-                value={form.time}
-                onChange={(e) => setForm((f) => ({ ...f, time: e.target.value }))}
-              />
-            </div>
-            <div>
-              <Label>Duration (min)</Label>
-              <Input
-                type="number"
-                step={15}
-                min={15}
-                value={form.durationMin}
-                onChange={(e) => setForm((f) => ({ ...f, durationMin: Number(e.target.value) }))}
-              />
-            </div>
+          <div>
+            <Label>Start time</Label>
+            <Input type="time" value={form.time} onChange={(e) => setForm((f) => ({ ...f, time: e.target.value }))} />
+            <p className="mt-1.5 text-xs text-[var(--color-ink-faint)]">
+              Booking for {new Date(selectedDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}. The backend checks
+              therapist/room availability, working hours, breaks, and leave — you'll see its message here if the slot doesn't work.
+            </p>
           </div>
 
-          {conflict && (
-            <div className="flex items-start gap-2.5 rounded-[var(--radius-md)] bg-[var(--color-warning-soft)] px-3.5 py-3 text-sm text-[var(--color-warning)]">
+          {submitError && (
+            <div className="flex items-start gap-2.5 rounded-[var(--radius-md)] bg-[var(--color-danger-soft)] px-3.5 py-3 text-sm text-[var(--color-danger)]">
               <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-              <span>
-                Overlaps with <strong>{conflict.patientName}</strong>'s {conflict.service} (
-                {formatTime(conflict.start)}–{formatTime(conflict.end)}). Choose a different time, therapist, or room.
-              </span>
+              <span>{submitError}</span>
             </div>
           )}
         </div>

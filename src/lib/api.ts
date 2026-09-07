@@ -1,11 +1,7 @@
 import axios from 'axios'
 
-// Point this at the real Aura Django/DRF backend when it's ready:
-//   VITE_API_BASE_URL=https://your-render-app.onrender.com/api
-// Until then, or whenever it's unreachable, the app runs on mock data
-// (see lib/dataSource.ts) so the UI is fully explorable standalone.
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
-export const USE_MOCKS = !API_BASE_URL || import.meta.env.VITE_USE_MOCKS === 'true'
+// The real Aura Django/DRF backend, mounted at /api on Render.
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'https://auro-backend-api.onrender.com/api'
 
 const ACCESS_TOKEN_KEY = 'aura.accessToken'
 const REFRESH_TOKEN_KEY = 'aura.refreshToken'
@@ -34,8 +30,8 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Simple JWT refresh-on-401 flow matching DRF SimpleJWT's
-// /token/ and /token/refresh/ endpoints.
+// Aura's own /users/refresh/ endpoint (not DRF SimpleJWT's default path):
+// POST { refresh_token } -> { token, role_id, role, user }
 let refreshing: Promise<string | null> | null = null
 
 api.interceptors.response.use(
@@ -47,10 +43,10 @@ api.interceptors.response.use(
       refreshing =
         refreshing ??
         api
-          .post('/token/refresh/', { refresh: tokenStore.getRefresh() })
+          .post('/users/refresh/', { refresh_token: tokenStore.getRefresh() })
           .then((res) => {
-            tokenStore.set(res.data.access)
-            return res.data.access as string
+            tokenStore.set(res.data.token)
+            return res.data.token as string
           })
           .catch(() => {
             tokenStore.clear()
@@ -69,3 +65,23 @@ api.interceptors.response.use(
     return Promise.reject(error)
   },
 )
+
+// Aura's DRF error bodies are usually { error: "..." } (custom views) or
+// field-keyed validation errors (ModelSerializer defaults). This pulls a
+// single human-readable message out of either shape.
+export function apiErrorMessage(err: unknown, fallback = 'Something went wrong. Please try again.'): string {
+  if (axios.isAxiosError(err)) {
+    const data = err.response?.data
+    if (typeof data === 'string') return data
+    if (data?.error) return data.error
+    if (data?.detail) return data.detail
+    if (data && typeof data === 'object') {
+      const firstKey = Object.keys(data)[0]
+      const firstVal = firstKey ? (data as Record<string, unknown>)[firstKey] : null
+      if (Array.isArray(firstVal)) return String(firstVal[0])
+      if (typeof firstVal === 'string') return firstVal
+    }
+    if (err.message === 'Network Error') return "Can't reach the Aura backend right now. Check your connection or try again shortly."
+  }
+  return fallback
+}
