@@ -1,0 +1,87 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..700&family=Inter:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  /* ---- Aura "Sereno" palette: warm, clinical-modern, premium spa ---- */
+  --color-ivory: #faf7f2;
+  --color-ivory-dim: #f2ede4;
+  --color-surface: #ffffff;
+  --color-surface-soft: #fbfaf7;
+
+  --color-forest-950: #10221d;
+  --color-forest-900: #16302a;
+  --color-forest-800: #1f3f37;
+  --color-forest-700: #2b5348;
+  --color-forest-600: #3a6d5d;
+  --color-forest-500: #4b8571;
+  --color-forest-100: #dfe9e3;
+  --color-forest-50: #f0f5f2;
+
+  --color-gold-700: #a9803f;
+  --color-gold-600: #c29752;
+  --color-gold-500: #d3ad6b;
+  --color-gold-100: #f4e9d6;
+
+  --color-ink: #221f1b;
+  --color-ink-soft: #55504a;
+  --color-ink-faint: #8a8478;
+
+  --color-line: #e8e1d5;
+  --color-line-soft: #f0ebe0;
+
+  --color-success: #3f7d58;
+  --color-success-soft: #e5f0e7;
+  --color-warning: #b9793a;
+  --color-warning-soft: #f6ead9;
+  --color-danger: #ac4f47;
+  --color-danger-soft: #f5e3e0;
+  --color-info: #4d7290;
+  --color-info-soft: #e5edf2;
+
+  --font-display: 'Fraunces', ui-serif, Georgia, serif;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  --shadow-soft: 0 1px 2px rgba(34, 31, 27, 0.04), 0 8px 24px -8px rgba(34, 31, 27, 0.08);
+  --shadow-lift: 0 4px 10px rgba(34, 31, 27, 0.05), 0 16px 40px -12px rgba(34, 31, 27, 0.14);
+
+  --radius-xl: 1.25rem;
+  --radius-lg: 0.9rem;
+  --radius-md: 0.6rem;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background-color: var(--color-ivory);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background-color: var(--color-gold-100);
+  color: var(--color-forest-900);
+}
+
+/* thin, quiet scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: var(--color-line);
+  border-radius: 999px;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.shadow-soft { box-shadow: var(--shadow-soft); }
+.shadow-lift { box-shadow: var(--shadow-lift); }
