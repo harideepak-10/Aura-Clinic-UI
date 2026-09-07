@@ -1,5 +1,5 @@
 import { type FormEvent, useState } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Leaf, Mail, Lock, ArrowRight } from 'lucide-react'
 import { Input, Label } from '../components/ui/Input'
@@ -116,6 +116,12 @@ export function Login() {
 
           <p className="mt-8 text-center text-xs text-[var(--color-ink-faint)]">
             Connects to your live Aura backend — sign in with your clinic account.
+          </p>
+          <p className="mt-3 text-center text-xs text-[var(--color-ink-faint)]">
+            Don't have an account?{' '}
+            <Link to="/register" className="font-medium text-[var(--color-forest-700)] hover:underline">
+              Sign up here
+            </Link>
           </p>
         </motion.div>
       </div>

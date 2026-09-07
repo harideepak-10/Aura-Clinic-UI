@@ -8,6 +8,7 @@ interface AuthState {
   isLoading: boolean
   error: string | null
   login: (email: string, password: string) => Promise<void>
+  register: (input: { username: string; email: string; password: string; confirm_password: string; role_id: number }) => Promise<void>
   logout: () => void
   hydrate: () => Promise<void>
 }
@@ -47,6 +48,21 @@ export const useAuth = create<AuthState>((set) => ({
       set({ user: data.user, isAuthenticated: true, isLoading: false })
     } catch (err) {
       set({ error: apiErrorMessage(err, 'Invalid email or password.'), isLoading: false })
+    }
+  },
+
+  // POST /users/register/ is public on the backend (AllowAny) — this is a
+  // genuine self-service sign-up, same endpoint the admin's "Add staff"
+  // form uses, and it returns tokens directly so the new account is signed
+  // in immediately, same as the Flutter reference app's sign-up screen.
+  register: async (input) => {
+    set({ isLoading: true, error: null })
+    try {
+      const { data } = await api.post('/users/register/', input)
+      tokenStore.set(data.token, data.refresh_token)
+      set({ user: data.user, isAuthenticated: true, isLoading: false })
+    } catch (err) {
+      set({ error: apiErrorMessage(err, 'Could not create your account.'), isLoading: false })
     }
   },
 

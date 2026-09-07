@@ -374,6 +374,17 @@ export interface StaffRegisterInput {
   role_id: number // 2 = reception, 3 = therapist
 }
 
+// Same endpoint as StaffRegisterInput (POST /users/register/ is public — this
+// is the self-service sign-up screen, which also accepts role_id 1 = admin).
+export type RegisterInput = StaffRegisterInput
+
+export interface RoleOption {
+  id: number
+  role: Role
+  title: string
+  level: string
+}
+
 export interface StaffUpdateInput {
   username?: string
   email?: string

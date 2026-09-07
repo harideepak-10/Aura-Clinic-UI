@@ -29,6 +29,7 @@ import type {
   PatientPhotosResponse,
   PaymentsResponse,
   PlannedClosure,
+  RoleOption,
   Room,
   RoomInput,
   StaffBreak,
@@ -72,6 +73,13 @@ export async function createAppointment(input: AppointmentBookingInput): Promise
 
 export async function updateAppointmentStatus(id: number, statusId: number): Promise<Appointment> {
   const { data } = await api.patch(`/appointments/${id}/status/`, { status_id: statusId })
+  return data
+}
+
+// ─── Roles (public — used by the sign-up screen's role picker) ──────────────
+
+export async function getRoles(): Promise<RoleOption[]> {
+  const { data } = await api.get('/users/roles/')
   return data
 }
 
