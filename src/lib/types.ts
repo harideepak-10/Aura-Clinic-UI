@@ -112,6 +112,40 @@ export interface Patient {
   total_spent: number
 }
 
+// Write payload for POST/PATCH /patients/ — the backend accepts camelCase
+// bloodType/skinType/marketingSource (see PatientSerializer.to_internal_value)
+// and marketingSource is just the integer id, not the {id,label} object the
+// read side returns.
+export interface PatientInput {
+  name: string
+  phone: string
+  email?: string
+  city?: string
+  country?: string
+  gender?: string
+  dob?: string
+  bloodType?: string
+  allergies?: string
+  skinType?: string
+  contraindications?: string
+  marketingSource?: number
+  notes?: string
+}
+
+export interface PatientFormOption {
+  id: number
+  value: string
+  label: string
+}
+
+export interface PatientFormChoices {
+  gender: PatientFormOption[]
+  skin_type: PatientFormOption[]
+  blood_type: PatientFormOption[]
+  marketing_source: PatientFormOption[]
+  category: PatientFormOption[]
+}
+
 export type AppointmentStatus = 'upcoming' | 'in_session' | 'completed' | 'cancelled'
 export type PaymentStatus = 'pending' | 'paid' | 'refunded'
 export type PaymentType = 'online' | 'cash'

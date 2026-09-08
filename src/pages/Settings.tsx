@@ -17,6 +17,13 @@ const links = [
 
 export function Settings() {
   const { user, logout } = useAuth()
+  const isAdmin = user?.role === 'admin'
+  // Reception reaches Leads directly via its own nav tab, so the hub only
+  // needs to surface it for admin too — everyone else (reception,
+  // therapist) gets Flutter's plain profile-card settings screen with no
+  // hub of links, since neither role has anywhere else in Flutter's own
+  // settings screen to jump to.
+  const visibleLinks = links
 
   return (
     <div className="space-y-6">
@@ -47,29 +54,42 @@ export function Settings() {
         </CardBody>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Clinic configuration</CardTitle>
-        </CardHeader>
-        <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {links.map(({ to, label, description, icon: Icon }) => (
-            <Link
-              key={to}
-              to={to}
-              className="flex items-center gap-3.5 rounded-[var(--radius-md)] border border-[var(--color-line-soft)] px-4 py-3.5 transition-colors hover:border-[var(--color-forest-500)] hover:bg-[var(--color-ivory-dim)]"
-            >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-forest-50)] text-[var(--color-forest-700)]">
-                <Icon size={18} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-[var(--color-ink)]">{label}</p>
-                <p className="truncate text-xs text-[var(--color-ink-faint)]">{description}</p>
-              </div>
-              <ChevronRight size={16} className="shrink-0 text-[var(--color-ink-faint)]" />
-            </Link>
-          ))}
-        </CardBody>
-      </Card>
+      {isAdmin ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Clinic configuration</CardTitle>
+          </CardHeader>
+          <CardBody className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {visibleLinks.map(({ to, label, description, icon: Icon }) => (
+              <Link
+                key={to}
+                to={to}
+                className="flex items-center gap-3.5 rounded-[var(--radius-md)] border border-[var(--color-line-soft)] px-4 py-3.5 transition-colors hover:border-[var(--color-forest-500)] hover:bg-[var(--color-ivory-dim)]"
+              >
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-forest-50)] text-[var(--color-forest-700)]">
+                  <Icon size={18} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-[var(--color-ink)]">{label}</p>
+                  <p className="truncate text-xs text-[var(--color-ink-faint)]">{description}</p>
+                </div>
+                <ChevronRight size={16} className="shrink-0 text-[var(--color-ink-faint)]" />
+              </Link>
+            ))}
+          </CardBody>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>Preferences</CardTitle>
+          </CardHeader>
+          <CardBody className="space-y-1">
+            <p className="px-1 py-2 text-sm text-[var(--color-ink-soft)]">
+              Profile details and notification preferences are managed by the clinic's admin. Contact them for changes to your account.
+            </p>
+          </CardBody>
+        </Card>
+      )}
     </div>
   )
 }

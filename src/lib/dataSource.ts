@@ -6,6 +6,7 @@ import { api } from './api'
 import type {
   Appointment,
   AppointmentBookingInput,
+  AppointmentStatus,
   AuthUser,
   ChatResponse,
   ChatTurn,
@@ -21,7 +22,9 @@ import type {
   LeadPipelineColumn,
   LeadStats,
   Patient,
+  PatientFormChoices,
   PatientHistory,
+  PatientInput,
   PatientNote,
   PatientNoteInput,
   PatientNotesResponse,
@@ -71,8 +74,21 @@ export async function createAppointment(input: AppointmentBookingInput): Promise
   return data
 }
 
-export async function updateAppointmentStatus(id: number, statusId: number): Promise<Appointment> {
-  const { data } = await api.patch(`/appointments/${id}/status/`, { status_id: statusId })
+// The backend takes the status VALUE directly (e.g. "in_session"), not a
+// numeric id — { status: "in_session" }, confirmed from AppointmentStatusView.
+export async function updateAppointmentStatus(id: number, status: AppointmentStatus): Promise<Appointment> {
+  const { data } = await api.patch(`/appointments/${id}/status/`, { status })
+  return data
+}
+
+// Reception/admin only on the backend (IsAdminOrReception).
+export async function setAppointmentArrived(id: number, arrived: boolean): Promise<{ message: string; patient_arrived: boolean }> {
+  const { data } = await api.patch(`/appointments/${id}/arrived/`, { patient_arrived: arrived })
+  return data
+}
+
+export async function getAppointment(id: number): Promise<Appointment> {
+  const { data } = await api.get(`/appointments/${id}/`)
   return data
 }
 
@@ -198,6 +214,32 @@ export interface PatientFilters {
 
 export async function getPatients(filters: PatientFilters = {}): Promise<Patient[]> {
   const { data } = await api.get('/patients/', { params: filters })
+  return data
+}
+
+// The backend auto-scopes this list for a therapist login to only the
+// patients they've had appointments with (see PatientViewSet.get_queryset) —
+// no client-side filtering needed for that role.
+
+export async function getPatientFormChoices(): Promise<PatientFormChoices> {
+  const { data } = await api.get('/patients/form-choices/')
+  return data
+}
+
+// Create/update are IsAdminOrReception on the backend — a therapist login
+// will get a 403, which the UI should avoid attempting (isReadOnly gating).
+export async function createPatient(input: PatientInput): Promise<Patient> {
+  const { data } = await api.post('/patients/', input)
+  return data
+}
+
+export async function updatePatient(id: string, input: Partial<PatientInput>): Promise<Patient> {
+  const { data } = await api.patch(`/patients/${id}/`, input)
+  return data
+}
+
+export async function setPatientVip(id: string, isVip: boolean): Promise<{ message: string; category: string }> {
+  const { data } = await api.patch(`/patients/${id}/vip/`, { is_vip: isVip })
   return data
 }
 

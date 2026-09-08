@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, Plus, AlertTriangle, MapPin, RotateCcw } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, AlertTriangle, MapPin, RotateCcw, Phone, Mail, FileCheck2, UserCheck, Play, CheckCircle2, XCircle } from 'lucide-react'
 import { Card, CardBody, CardHeader, CardTitle } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
@@ -7,8 +7,18 @@ import { Modal } from '../components/ui/Modal'
 import { Input, Label } from '../components/ui/Input'
 import { Avatar } from '../components/ui/Avatar'
 import { apiErrorMessage } from '../lib/api'
-import { createAppointment, getAppointments, getPatients, getRooms, getTherapists, getTreatments } from '../lib/dataSource'
-import type { Appointment, Patient, Room, StaffMember, Treatment } from '../lib/types'
+import {
+  createAppointment,
+  getAppointments,
+  getPatients,
+  getRooms,
+  getTherapists,
+  getTreatments,
+  setAppointmentArrived,
+  updateAppointmentStatus,
+} from '../lib/dataSource'
+import { useAuth } from '../lib/auth'
+import type { Appointment, AppointmentStatus, Patient, Room, StaffMember, Treatment } from '../lib/types'
 import { statusTone, statusLabel } from '../lib/format'
 
 const DAY_START = 8
@@ -30,6 +40,18 @@ function parseTimeRange(time: string): { start: number; end: number } | null {
 }
 
 export function Appointments() {
+  const { user } = useAuth()
+  const role = user?.role
+  // Booking and the multi-therapist timeline are an admin/reception task in
+  // Flutter (TherapistAppointmentListScreen is a plain list, scoped to the
+  // logged-in therapist, with no "book" affordance at all) — the backend
+  // doesn't hard-block a therapist from calling POST /appointments/, but we
+  // follow Flutter's actual UX split rather than exposing a form most
+  // therapists have no reason to use.
+  const isTherapist = role === 'therapist'
+  const canBook = role === 'admin' || role === 'reception'
+  const canMarkArrived = role === 'admin' || role === 'reception' // IsAdminOrReception on the backend
+
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [therapists, setTherapists] = useState<StaffMember[]>([])
   const [rooms, setRooms] = useState<Room[]>([])
@@ -37,6 +59,7 @@ export function Appointments() {
   const [patients, setPatients] = useState<Patient[]>([])
   const [selectedDate, setSelectedDate] = useState(todayIso())
   const [modalOpen, setModalOpen] = useState(false)
+  const [selected, setSelected] = useState<Appointment | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -57,7 +80,7 @@ export function Appointments() {
   const loadDay = (date: string) => {
     setLoading(true)
     setLoadError(null)
-    getAppointments({ date })
+    getAppointments({ date, staffId: isTherapist ? user?.id : undefined })
       .then(setAppointments)
       .catch((err) => setLoadError(apiErrorMessage(err, 'Could not load appointments.')))
       .finally(() => setLoading(false))
@@ -66,15 +89,16 @@ export function Appointments() {
   useEffect(() => {
     loadDay(selectedDate)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate])
+  }, [selectedDate, isTherapist])
 
   useEffect(() => {
     getTherapists().then(setTherapists).catch(() => {})
     getTreatments().then(setTreatments).catch(() => {})
-    getPatients().then(setPatients).catch(() => {})
+    if (canBook) getPatients().then(setPatients).catch(() => {})
     getRooms()
       .then(setRooms)
       .catch(() => setRoomsBlocked(true)) // rooms/ is admin-only on the backend
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const shiftDate = (days: number) => {
@@ -82,6 +106,8 @@ export function Appointments() {
     d.setDate(d.getDate() + days)
     setSelectedDate(d.toISOString().slice(0, 10))
   }
+
+  const openDetail = (a: Appointment) => setSelected(a)
 
   const submitBooking = async () => {
     if (!form.patientId || !form.therapistId || !form.treatmentId || !form.pricePlanId) return
@@ -127,9 +153,11 @@ export function Appointments() {
             <ChevronRight size={16} />
           </button>
         </div>
-        <Button onClick={() => setModalOpen(true)}>
-          <Plus size={16} /> New appointment
-        </Button>
+        {canBook && (
+          <Button onClick={() => setModalOpen(true)}>
+            <Plus size={16} /> New appointment
+          </Button>
+        )}
       </div>
 
       {loadError && (
@@ -141,6 +169,10 @@ export function Appointments() {
         </Card>
       )}
 
+      {/* The Flutter therapist appointment screen is a plain scoped list with
+          no cross-therapist grid — that view only makes sense for admin/
+          reception, who are booking and coordinating rooms across the team. */}
+      {!isTherapist && (
       <Card>
         <CardHeader>
           <CardTitle>Room &amp; therapist timeline</CardTitle>
@@ -181,9 +213,10 @@ export function Appointments() {
                       const height = ((range.end - range.start) / totalHours) * 100
                       const cancelled = a.status === 'cancelled'
                       return (
-                        <div
+                        <button
                           key={a.id}
-                          className="absolute inset-x-1 overflow-hidden rounded-[var(--radius-md)] border px-2 py-1.5 text-xs shadow-soft"
+                          onClick={() => openDetail(a)}
+                          className="absolute inset-x-1 overflow-hidden rounded-[var(--radius-md)] border px-2 py-1.5 text-left text-xs shadow-soft transition-transform hover:-translate-y-0.5"
                           style={{
                             top: `${top}%`,
                             height: `${Math.max(height, 6)}%`,
@@ -195,7 +228,7 @@ export function Appointments() {
                         >
                           <p className={`font-medium text-[var(--color-ink)] ${cancelled ? 'line-through' : ''}`}>{a.patient_detail.name}</p>
                           <p className="text-[var(--color-ink-faint)]">{a.treatment_detail.name}</p>
-                        </div>
+                        </button>
                       )
                     })}
                 </div>
@@ -204,15 +237,21 @@ export function Appointments() {
           )}
         </CardBody>
       </Card>
+      )}
 
       <Card>
         <CardHeader>
-          <CardTitle>List view</CardTitle>
+          <CardTitle>{isTherapist ? "Today's schedule" : 'List view'}</CardTitle>
         </CardHeader>
         <CardBody className="space-y-1">
+          {loading && <p className="py-6 text-center text-sm text-[var(--color-ink-faint)]">Loading schedule…</p>}
           {!loading && sorted.length === 0 && <p className="py-6 text-center text-sm text-[var(--color-ink-faint)]">No appointments on this day.</p>}
           {sorted.map((a) => (
-            <div key={a.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-lg)] px-3 py-3 transition-colors hover:bg-[var(--color-ivory-dim)]">
+            <button
+              key={a.id}
+              onClick={() => openDetail(a)}
+              className="flex w-full flex-wrap items-center justify-between gap-3 rounded-[var(--radius-lg)] px-3 py-3 text-left transition-colors hover:bg-[var(--color-ivory-dim)]"
+            >
               <div className="flex items-center gap-3">
                 <Avatar name={a.patient_detail.name} size={38} />
                 <div>
@@ -228,16 +267,27 @@ export function Appointments() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
+                {a.patient_arrived && <UserCheck size={14} className="text-[var(--color-success)]" />}
                 <span className="text-sm text-[var(--color-ink-soft)]">{a.time}</span>
                 <Badge tone={statusTone(a.status)}>{statusLabel(a.status)}</Badge>
               </div>
-            </div>
+            </button>
           ))}
         </CardBody>
       </Card>
 
+      <AppointmentDetailModal
+        appointment={selected}
+        onClose={() => setSelected(null)}
+        canMarkArrived={canMarkArrived}
+        onUpdated={(updated) => {
+          setAppointments((prev) => prev.map((a) => (a.id === updated.id ? updated : a)))
+          setSelected(updated)
+        }}
+      />
+
       <Modal
-        open={modalOpen}
+        open={modalOpen && canBook}
         onClose={() => setModalOpen(false)}
         title="New appointment"
         footer={
@@ -357,5 +407,156 @@ export function Appointments() {
         </div>
       </Modal>
     </div>
+  )
+}
+
+// This is the piece Flutter's TherapistAppointmentDetailScreen offers (Start
+// session / Complete session / Cancel, an arrival toggle for front desk) but
+// the flashy static bits from that Flutter screen — hardcoded product lists,
+// before/after photo slots — aren't backed by any real endpoint, so instead
+// of faking them here, that work belongs in the Patients → Notes flow, which
+// already round-trips to the real PatientNoteInput API.
+function AppointmentDetailModal({
+  appointment,
+  onClose,
+  canMarkArrived,
+  onUpdated,
+}: {
+  appointment: Appointment | null
+  onClose: () => void
+  canMarkArrived: boolean
+  onUpdated: (a: Appointment) => void
+}) {
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  if (!appointment) return null
+
+  const setStatus = async (status: AppointmentStatus) => {
+    setBusy(status)
+    setError(null)
+    try {
+      const updated = await updateAppointmentStatus(appointment.id, status)
+      onUpdated(updated)
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Could not update this appointment.'))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const toggleArrived = async () => {
+    setBusy('arrived')
+    setError(null)
+    try {
+      const res = await setAppointmentArrived(appointment.id, !appointment.patient_arrived)
+      onUpdated({ ...appointment, patient_arrived: res.patient_arrived })
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Could not update arrival status.'))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <Modal open={!!appointment} onClose={onClose} title="Appointment">
+      <div className="space-y-5">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <Avatar name={appointment.patient_detail.name} size={44} />
+            <div>
+              <p className="text-sm font-medium text-[var(--color-ink)]">{appointment.patient_detail.name}</p>
+              <p className="flex items-center gap-3 text-xs text-[var(--color-ink-faint)]">
+                {appointment.patient_detail.phone && (
+                  <span className="flex items-center gap-1">
+                    <Phone size={11} /> {appointment.patient_detail.phone}
+                  </span>
+                )}
+                {appointment.patient_detail.email && (
+                  <span className="flex items-center gap-1">
+                    <Mail size={11} /> {appointment.patient_detail.email}
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
+          <Badge tone={statusTone(appointment.status)}>{statusLabel(appointment.status)}</Badge>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-line-soft)] px-3.5 py-2.5">
+            <p className="text-xs text-[var(--color-ink-faint)]">Treatment</p>
+            <p className="font-medium text-[var(--color-ink)]">{appointment.treatment_detail.name}</p>
+          </div>
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-line-soft)] px-3.5 py-2.5">
+            <p className="text-xs text-[var(--color-ink-faint)]">Therapist</p>
+            <p className="font-medium text-[var(--color-ink)]">{appointment.staff_detail.name}</p>
+          </div>
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-line-soft)] px-3.5 py-2.5">
+            <p className="text-xs text-[var(--color-ink-faint)]">Date &amp; time</p>
+            <p className="font-medium text-[var(--color-ink)]">
+              {appointment.date} · {appointment.time}
+            </p>
+          </div>
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-line-soft)] px-3.5 py-2.5">
+            <p className="text-xs text-[var(--color-ink-faint)]">Room</p>
+            <p className="font-medium text-[var(--color-ink)]">{appointment.room_detail?.name ?? '—'}</p>
+          </div>
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-line-soft)] px-3.5 py-2.5">
+            <p className="text-xs text-[var(--color-ink-faint)]">Session</p>
+            <p className="font-medium text-[var(--color-ink)]">
+              {appointment.session_number}/{appointment.total_sessions}
+            </p>
+          </div>
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-line-soft)] px-3.5 py-2.5">
+            <p className="text-xs text-[var(--color-ink-faint)]">Payment</p>
+            <p className="font-medium text-[var(--color-ink)]">
+              {appointment.payment_amount ? `€${appointment.payment_amount}` : '—'} · {appointment.payment_status}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 text-xs text-[var(--color-ink-faint)]">
+          <FileCheck2 size={13} /> Consent: {appointment.consent_status}
+          {appointment.patient_arrived && (
+            <span className="ml-2 flex items-center gap-1 text-[var(--color-success)]">
+              <UserCheck size={13} /> Arrived
+            </span>
+          )}
+        </div>
+
+        {appointment.notes && <p className="text-sm text-[var(--color-ink-soft)]">{appointment.notes}</p>}
+
+        {error && (
+          <div className="flex items-start gap-2.5 rounded-[var(--radius-md)] bg-[var(--color-danger-soft)] px-3.5 py-3 text-sm text-[var(--color-danger)]">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {appointment.status !== 'cancelled' && appointment.status !== 'completed' && (
+          <div className="flex flex-wrap gap-2 border-t border-[var(--color-line-soft)] pt-4">
+            {canMarkArrived && (
+              <Button variant="secondary" size="sm" onClick={toggleArrived} disabled={busy === 'arrived'}>
+                <UserCheck size={14} /> {appointment.patient_arrived ? 'Mark not arrived' : 'Mark arrived'}
+              </Button>
+            )}
+            {appointment.status === 'upcoming' && (
+              <Button size="sm" onClick={() => setStatus('in_session')} disabled={!!busy}>
+                <Play size={14} /> {busy === 'in_session' ? 'Starting…' : 'Start session'}
+              </Button>
+            )}
+            {appointment.status === 'in_session' && (
+              <Button size="sm" onClick={() => setStatus('completed')} disabled={!!busy}>
+                <CheckCircle2 size={14} /> {busy === 'completed' ? 'Completing…' : 'Complete session'}
+              </Button>
+            )}
+            <Button variant="danger" size="sm" onClick={() => setStatus('cancelled')} disabled={!!busy}>
+              <XCircle size={14} /> {busy === 'cancelled' ? 'Cancelling…' : 'Cancel'}
+            </Button>
+          </div>
+        )}
+      </div>
+    </Modal>
   )
 }

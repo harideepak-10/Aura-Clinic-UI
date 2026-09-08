@@ -16,6 +16,8 @@ import {
   Settings,
 } from 'lucide-react'
 import { cn } from '../../lib/cn'
+import { useAuth } from '../../lib/auth'
+import { canAccessPage } from '../../lib/roles'
 
 interface NavItem {
   to: string
@@ -62,7 +64,12 @@ const navGroups: { label: string; items: NavItem[] }[] = [
   },
 ]
 
+// path without a leading slash, matching roles.ts's ROLE_PAGE_ACCESS keys.
+const pathKey = (to: string) => (to === '/' ? '' : to.replace(/^\//, ''))
+
 export function Sidebar() {
+  const role = useAuth((s) => s.user?.role)
+
   return (
     <aside className="hidden w-64 shrink-0 flex-col overflow-y-auto border-r border-[var(--color-line-soft)] bg-[var(--color-surface-soft)] px-4 py-6 lg:flex">
       <div className="mb-6 flex items-center gap-2.5 px-2">
@@ -76,33 +83,37 @@ export function Sidebar() {
       </div>
 
       <nav className="flex flex-1 flex-col gap-4">
-        {navGroups.map((group, gi) => (
-          <div key={gi}>
-            {group.label && (
-              <p className="mb-1.5 px-3.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-ink-faint)]">{group.label}</p>
-            )}
-            <div className="flex flex-col gap-1">
-              {group.items.map(({ to, label, icon: Icon, end }) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  end={end}
-                  className={({ isActive }) =>
-                    cn(
-                      'flex items-center gap-3 rounded-full px-3.5 py-2.5 text-sm font-medium transition-colors',
-                      isActive
-                        ? 'bg-[var(--color-forest-800)] text-[var(--color-ivory)] shadow-soft'
-                        : 'text-[var(--color-ink-soft)] hover:bg-[var(--color-ivory-dim)] hover:text-[var(--color-ink)]',
-                    )
-                  }
-                >
-                  <Icon size={18} />
-                  {label}
-                </NavLink>
-              ))}
+        {navGroups.map((group, gi) => {
+          const items = group.items.filter((item) => canAccessPage(role, pathKey(item.to)))
+          if (items.length === 0) return null
+          return (
+            <div key={gi}>
+              {group.label && (
+                <p className="mb-1.5 px-3.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-ink-faint)]">{group.label}</p>
+              )}
+              <div className="flex flex-col gap-1">
+                {items.map(({ to, label, icon: Icon, end }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    end={end}
+                    className={({ isActive }) =>
+                      cn(
+                        'flex items-center gap-3 rounded-full px-3.5 py-2.5 text-sm font-medium transition-colors',
+                        isActive
+                          ? 'bg-[var(--color-forest-800)] text-[var(--color-ivory)] shadow-soft'
+                          : 'text-[var(--color-ink-soft)] hover:bg-[var(--color-ivory-dim)] hover:text-[var(--color-ink)]',
+                      )
+                    }
+                  >
+                    <Icon size={18} />
+                    {label}
+                  </NavLink>
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </nav>
     </aside>
   )
